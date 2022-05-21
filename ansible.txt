@@ -1,0 +1,647 @@
+#check ansible version
+ansible --version
+
+#copy ssh-key from ansible engine to server managed node
+ssh-copy-id <server address/server ip>
+
+#give root privillege to user ansadmin
+visudo
+-->Add the contenet in end of the file
+username    ALL=(ALL)   NOPASSWD: ALL
+ansadmin    ALL=(ALL)   NOPASSWD: ALL
+
+#to ask for password in root module
+ansadmin    ALL=(ALL)   ALL
+#disbale host key exchange yes/no during ssh connection establishment
+vi ansible.cfg
+host_key_checking=False
+
+#disbale host key exchange yes/no during ssh connection establishment by command
+export ANSIBLE_HOST_KEY_CHECKING=False
+
+#test specific server node by ansible engine
+ansible 10.11.135.65 -m ping
+
+#test specific number of servers node by ansible engine
+ansible 10.11.135.65:10.11.135.66:10.11.135.67 -m ping
+
+#test all manage nodes by ansible engine
+ansible all -m ping
+
+#define group in /etc/ansible/hosts
+[group1]
+10.11.135.65
+10.11.135.66
+
+[group2]
+10.11.142.226
+10.11.142.225
+
+[dbserver]
+10.11.142.227
+
+[appserver]
+10.11.142.231
+
+#test all manage server by group of server by ansible engine
+ansible groupname(group1/group2/dbserver/appserver) -m ping
+
+#pass inventory file by command
+ansible all -m ping -i hosts/path of inventory file
+
+#command to execute task in remte server by ad-hoc command
+#run command on remote server
+ansible <host/target server> -m shell -a "command to execute"
+ansible 10.11.142.226 -m shell -a "uptime"
+
+#run command on many server group for run at all server
+ansible group1name:group2name:...:groupN -m -a "command to execute"
+ansible group1:group2:dbserver -m shell -a "uptime"
+
+#run command in specific server and group 
+ansible targat server:groupname -m shell -a "command to execute"
+ansible 10.11.142.226:appserver:group1 -m shell -a "rm -rf folder"
+
+#to see all available module in ansible
+ansible-doc -l
+
+#information about specific module
+ansible-doc moduleName
+ansible-doc shell
+
+#information about module pushed and directory structure all etc
+#go to remote server
+cd /home/.ansible
+mkdir tmp
+#run command with parameter to keep file , by default it delete tmp directory on every task execution
+ANSIBLE_KEEP_REMOTE_FILES=1 ansible all -m shell -a "uptime"
+
+#execute task on ansible engine more then 5 server at a time or parallel
+change the value of forks=5 in ansible.cfg file
+change the value od forks=1 in ansible.cfg for run task in serial manner
+
+#transfer file using AD-hoc command in ansible by copy module
+ansible [-i inventory file path] <server1:server2:group1> -m module [-a arguments]
+ansible dbserver -m copy -a "src=/source/path/of/file dest=/dest/path/of/location"
+
+#create a file in remote server with content 
+ansible dbserver -m copy -a "content='hello this is form copy module!!' dest=/file location/filename.format"
+
+#create a file in remote server with content backup file  
+ansible dbserver -m copy -a "content='hello this is form copy module!!' dest=/file location/filename.format backup=yes"
+
+#download a file from remote server by ad-hoc command with fetch moduel
+ansible [-i inventory file path] <server1:server2:group1> -m module [-a arguments]
+ansible dbserver -m fetch -a "src=/source/path/of/file dest=/dest/path/of/location"
+
+#create file and directory using ansible ad-hoc command
+ansible dbserver -m file -a "path=/file/directory/path state=touch/directory"
+
+#create file and directory using ansible ad-hoc command with sudo root privillege use --become
+ansible dbserver -m file -a "path=/file/directory/path state=touch" -b
+
+#create file and directory using ansible ad-hoc command with user
+ansible dbserver -m file -a "path=/file/directory/path state=touch" --become-user="username"
+
+#delete file and directory using ansible ad-hoc command
+ansible dbserver -m file -a "path=/file/directory/path state=absent"
+
+#install software in server by ad-hoc command
+ansible dbserver -m yum/apt "name=git state=present" -b
+
+#update software with latest version in server by ad-hoc command
+ansible dbserver -m yum/apt "name=git state=latest" -b
+
+#update ll software packages with latest version in server by ad-hoc command
+ansible dbserver -m yum/apt "name=* state=latest" -b
+
+#execute binary command by command module
+#it is default module for ansible
+#$HOME varible will not available in this command moduel
+#stream operation like <,>,| and & will not work with command module
+ansible dbserver -m command -a "ls"
+----------------------------------------------------------------------------------------------------------
+---------------------------------------ansible Facts------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+1.these are information about the  managed nodes like os-distribution,release,processor,python etc.
+2.these gathered information about nodes called ansible facts and varible.
+3.we can gather/collect Facts using setup module in ad-hoc command
+4.Ansible playbook call this setup module by default to perform Gathering Facts tasks.
+5.facts have two type-->default or cutom
+ansible groupname/servername -m setup
+ansible 10.11.135.65:dbserver -m setup
+
+#filter ansible facts and varible results by specific facts
+ansible server/group -m setup -a "filter=specific facts"
+ansible 10.11.135.54 -m setup -a "filter=ansible_mount"
+
+#fetch git|httpd version by linux command
+git --version    o/p = git version 2.18.1
+
+httpd --version  
+o/p = Server version: Apache/2.4.37
+    Server built: Apr 5 2019 07:31:21
+
+
+#modify git version command with only version value $3 used for 3 value in git version i.e. 2.18.1
+git --version|awk '{print $3}'
+
+#modify httpd version command with only version value NR==1 used for line no. & $3 used for 3 value in https version i.e. Apache/2.4.37
+httpd --version|awk 'NR==1{print $3}'
+
+#how to create custom facts
+Step1: Create /etc/ansible/facts.d on Managed Nodes
+Step2: Inside of facts.d place one more custom facts files with extension
+    as .fact
+Step3: The output of fact file should be a json.
+Step4: The fact file should have execution permission.
+Step5: We can find custom facts under ansible_local filter or key
+
+cd /etc/ansible
+mkdir facts.d
+cd /etc/ansible/facts.d
+------------------------------------------------
+vi git_http_v.fact
+------------------------------------------------
+#!/bin/bash
+
+git_ver=$(git --version|awk '{print $3}')
+httpd_ver=$(httpd --version|awk 'NR==1{print $3}')
+
+#ouput varible with Json format for fetch facts in ansible
+cat <<EOF
+{
+	"Git_Version" : "$git_ver",
+	"Httpd_Version: "$httpd_ver"
+}
+EOF
+
+#copy file in all server or managed node with permission and sudo user 'mode' for permission '--become,-b' root privillege
+ansible all -m copy -a "src=/etc/ansible/facts.d/git_httpd_v.fact dest=/etc/ansible/facts.d/git_httpd_v.fact mode='0777'" -b
+
+-------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------Ansible inventories----------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------
+1.collection of hosts known as 'Inventories' in ansible
+2.two type-->static and dynamic
+3.dynamic inventories like script shell/pyhton for dynamic environment.
+4.cloud is dynamic environment
+5.download ec2.py and ec2.ini files from ansible official repo
+6.run python script 
+./ec2.py
+
+ansible -i dynamic-inventory-file group/server -a task
+ansible -i ec2.py ec2 -a ping
+
+6.create dynamic script for aws inventory by tags
+-----------------------------------------------------
+vi aws_dynamic_inventory.py
+------------------------------------------------------
+#!/bin/pyhton
+import json
+import sys
+try:
+	import boto3
+except Exception as e:
+	print(e)
+	print("rectify above exception and try again")
+	sys.exit(1)
+	
+def get_hosts(ec2_ob,fv):
+	f={"name":"tag:Env","value":[fv]}
+	hosts=[]
+	for each_in in ec2_ob.instances.filter(filter[f]):
+		#print(each_in.private_ip_address)
+		hosts.append(each_in.private_ip_address)
+	return hosts
+	
+def main():
+	ec2_ob=boto3.resource("ec2".us-east-1")
+	db_group=get_hosts(ec2_ob,'db')
+	app_group=get_hosts(ec2_ob,'app')
+	all_group={'db':db_group,'app':app_group}
+	print(json.dumpls(all_group))
+	return None
+	
+if __name__="__main__":
+	main()
+-----------------------------------------------------------
+#list host in group by dyanmice inventory file
+ansible -i aws_dynamic_inventory.py app --list-hosts
+ansible -i aws_dynamic_inventory.py db --list-hosts
+
+#connection with password authentication in managed nodes with ansible
+#enable password authentication in managed node server
+cd /etc/ssh/
+cat sshd_config
+PasswordAuthentication yes
+service sshd restart
+
+#used to password for connect with password
+ansible server_ip -m <command> -k
+ansible 10.11.142.226 -m ping -k
+ansible 10.11.142.226 -m yum -a "name=git state=latest" -k -b
+
+#used to password for connect with sudo password
+ansible server_ip -m <command> -k(--ask-pass) -b(--become-root) -K(--ask-become-root-password)
+ansible 10.11.142.226 -m ping -k -b -K(sudo password)
+ansible 10.11.142.226 -m yum -a "name=git state=latest" -k -b -K
+
+#connect ansible to remote user or not default user with --user=REMOTE_USER module
+ansible 10.11.142.226 -m file -a "path=xyx.txt state=touch" -k -u xyz(user)
+
+#pass password and user on hosts file with server
+cat hosts
+[group]
+10.11.142.226 ansible_ssh_user=ansadmin ansible_ssh_pass=ansadmin@123 
+
+#define password and user for specific group of server
+[groupname]
+ansible_ssh_user=xyz 
+ansible_ssh_pass=xyz@123
+----------------------------------------------------------------------------------------------------
+------------------------------------playbooks--------------------------------------------------------
+----------------------------------------------------------------------------------------------------
+#playbook are the configuration , deployment and orchestration language of ansible and its expressed in YAML format.
+#install wget in all you servers
+vi install_wget.yaml
+---(start playbook)
+- name: this is name of play
+  hosts: ALL(host details)
+  become:yes(root privillege)
+  tasks :
+  - name: This is task name
+    yum: name:wget state=present(task to execute) 
+...
+
+#run playbook to execute task
+ansible-playbook install_wget.yaml
+
+#copy file playbook
+vi copy_file.yaml
+----------------
+- name: This is simple play run on web server--------1st play 
+  hosts:web
+  become:yes
+  tasks:
+  - name: this is task to copy file
+    copy: src=web.xml dest=web.xml-------------------1st task
+  - name:this is create file task
+    file: path=web.xml state=touch-------------------2nd task
+  
+#varify syntax check in playbook
+ansible-playbook copy_file.yaml --syntax-check
+
+#dry run for playbook to execute task but didn't changed in server
+./install copy_file.yaml --check
+
+#pring message by debug module it prints msg,var,verbosity
+---
+- hosts: all
+  tasks:
+  - debug: msg="welcome to ansible book"
+  
+...
+#pring multiple message by debug module it prints msg,var,verbosity
+---
+
+- name: This is play for debug module
+  hosts: localhost
+  tasks:
+  - debug: 
+      msg: 
+	   - "welcome to ansible book"
+	   - "its an messgae print"
+       - "play for print multiple message"	   
+...
+
+#print varible value with message in playbook
+#!/usr/bin/ansible-playbook (instead of ---)
+- name: usage of debug module
+  hosts: localhost
+  tasks:
+   - name: print varible message
+     debug:
+       msg: "The host name is: {{inventory_hostname}}"
+
+#print varible value with message in playbook
+#!/usr/bin/ansible-playbook (instead of ---)
+- name: usage of debug module
+  hosts: localhost
+  tasks:
+   - name: print varible message
+     debug:
+       var: inventory_hostname	
+
+---------------------------------------------------------------------------------------------------
+-------------------------------------------Ansible varibles-----------------------------------------
+----------------------------------------------------------------------------------------------------
+#we represnt varible in playbook as key:value pair only
+x = 4 (normal language)
+x: 4 (ansible-playbook varible)
+
+---
+- name: this is for varible 
+  hosts: localhost
+  var: 
+   x: 23
+   y: sawan
+   z: 2.67
+   a: true
+  tasks:
+  - debug: v
+     msg : "The value of x : {{x}}"
+	 msg : "The value of y : {{y}}"
+	 msg : "The value of z : {{z}}"
+	 msg : "The value of a : {{a}}"
+...
+
+#print type of varible by debug module
+---
+- name: this is for varible 
+  hosts: localhost
+  var: 
+   x: 23
+   y: sawan
+   z: 2.67
+   a: true/yes
+   gather_facts: false
+  tasks:
+  - debug: v
+     msg : "The type of x : {{x|type_debug}}"
+	 msg : "The type of y : {{y|type_debug}}"
+	 msg : "The type of z : {{z|type_debug}}"
+	 msg : "The type of a : {{a|type_debug}}"
+...
+
+# To read value by user using var_prompt
+---
+- hosts: localhost
+  vars:
+   x: 45
+   my_name: "narendra"
+  vars_prompt:
+   - name: y
+	 prompt: Enter the value of Y:
+	 private: false (dont display entered value in terminal bydefault it is true/yes)
+   - name: password
+	 prompt: Enter the value of password:
+	 private: yes
+  gather_facts: false/no
+  tasks:
+	- debug:
+		msg:
+		 - "The value of x is {{x}}"
+		 - "The my_name value is {{my_name}}"
+		 - "The value of y is {{y}}"
+		 - "The value of password is {{password}}"
+...
+
+# to read value from varible by var_files by yaml/json
+---
+varible.yaml
+x: 24
+y:
+ - 34
+ - 45
+ - "ansible"
+pkg:
+ "linux": "httpd"
+ "ubuntu": "apache2"
+---
+- hosts: localhost
+  var_files: variable.yaml
+  tasks:
+   - debug: var=pkg   (read value from variable.yaml with pkg variable)
+
+#pass variable file in command line arguments
+ansible-playbook playbook.yaml -e "@variable.yaml"		
+
+# to pass value in playbook from command line arguments
+---
+- name: This is simple playbook for argument example
+  hosts: localhost
+  gather_facts: false
+  become: yes
+  tasks:
+  - name: working with {{pkg}}
+    yum:
+	 name: {{pkg}} 
+     state: {{req_state}} 
+
+ansible-playbook playbook.yaml -e "pkg=nginx req_state=present"
+
+#hostvars used to represent all inventory server
+
+#airthmatic operation and method in ansible
+---
+- hosts: localhost
+  gather_facts: false
+  vars:
+   x: "This is abOut Ansible FIlters and MethoDS"
+   y: "56"
+   z: "[4,5,6,38,0]
+  tasks:
+   - debug:
+      msg:
+	   - "{{x|lower}}
+	   - "{{x|upper}}
+	   - "{{x|title}}
+	   - "{{x.lower}}
+	   - "{{x.upper}}
+	   - "{{y|int}}
+	   - "The max from z is:{{z|max}}"
+	   - "the min from z is:{{z|min}}"
+---------------------------------Conditional Statement-----------------------
+#when
+It works and execute any tasks if condition is true just like if condition 
+---
+- name: "when clause playbook"
+  hosts: localhost
+  gather_facts: false
+  vars:
+   x: 5
+   y: 67
+   my_list: [5,6,7]
+  tasks: 
+   - debug:
+      msg: "The value of x is {{x}} and y value is {{y}}" #print message when condition false skip task
+      when: x == y                                        #check condition
+   - debug:
+      msg: "x is present in my_list"                      #print message when condition is true execute task
+      when: x in my_list	                              #check condition
+	
+#remove package and install package with respect to distribution
+---
+- name: "When clause install remove httpd module"
+  hosts: all
+  gather_facts: false
+  become: yes
+  tasks:
+    - name: "uninstalling https using yum"
+      yum:
+        name: httpd                            #package name
+        state: absent                          #for uninstall remove package
+      when: ansible_distribution != "ubuntu"   #checking distribution is not ubuntu
+    - name: :installing apache2 using apt"
+      apt: 
+        name: apache2                          #package name     
+        state: present/latest		           #for install package
+		when: ansible_distribution = "ubuntu"  #checking distribution is ubuntu
+
+#failed_when
+#chnaged_when
+
+#handler to execute task after the task 
+---
+- hosts: localhost
+  gather_facts: false
+  become: yes
+  tasks:
+   - name: Installing httpd
+     yum: 
+       name: httpd                              #package name
+       state: present                           #install package 
+     notify:                                    #call handler when task execute complete its given result OK(no changed)/Chnaged(modify)
+       - start httpd                            #task name in handler
+  handlers:
+   - name: start_httpd                          #task name in handler
+     service:                                   #module name
+       name: httpd                              #package name
+       state: started	                        #start service  
+
+#loops in ansible playbook game
+---
+- hosts: localhost
+  gather_facts: false
+  become: yes
+  tasks:
+   - name: Installing multiple packages by for loop
+     yum: 
+       name: {{item}}                           #package name read from loops
+       state: present                          
+     loop:                                      #for loop item
+       - httpd                                  #item list
+       - git
+       - nexus
+	   - nginx
+
+#use tags to skip or run specific task with group of task
+#you can also provide same tags for two task
+#never tag is used for if you dont want to execute some task
+#always tag is used for if you want to execute task with no tags also
+ansible-playbook playbook.yaml --tags "specific task tag1,tag2..."            #execute task having specific tags
+ansible-playbook playbook.yaml --skip-tags "specific task tag"                #skip execute task having specific tags
+---
+- name: "Tags example"
+  hosts: all
+  gather_facts: yes
+  tasks:
+   - debug: 
+       msg: "this is first task"
+	 tags: first
+   - debug: 
+       msg: "this is first task"
+	 tags: second
+   - debug: 
+       msg: "this is first task"
+	 tags: first
+   - debug: 
+       msg: "this is first task"
+	 tags: fourth
+	 
+#list tags in playbook
+ansible-playbook playbook.yaml --list-tags
+
+#error handling ignore error in task and continue to execute next task
+---
+- name: "error example"
+  hosts: all
+  gather_facts: yes
+  tasks:
+   - command: "ls /homee"
+     register: home_out
+	 ignore_error: yes    #ignore error and playbook not stop continue execute next task
+   - debug: var=home_out
+   - command: "ls /tmp"
+     register: tmp_out
+   - debug: var=tmp_out
+
+#block level error handling for multiple task
+---
+- hosts: localhost
+  gather_facts: false
+  tasks:
+   - block:
+      - command: "ls \home"
+	    register: home_out #store result in varible in task
+	  - command: "ls \tmp"
+	    register: tmp_out #store result in varible in task
+	  - command: "ls \var"
+	    register: var_out #store result in varible in task
+	 ignore_error: yes
+   - debug: var=home_out
+   - debug: var=tmp_out
+   - debug: var=var_out
+
+#variable for check os_family
+ansible_os_family=="RedHat"
+ansible_os_family=="Debian"
+
+#block rescue and always in ansible just like try catch final....
+---
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - block:
+	  - name: "finding files in /home"
+	    command: "ls /homee/tomcat6"
+		register: tomcat_out
+	  rescue:
+	    - debug: 
+		    msg: "The will execute if block task is failed"
+	  always:
+	    - debug:
+		    msg: "This will always execute"2
+
+#import_task/include_task to yaml playbook
+tasks:
+  - import_tasks: install_package_playbook.yaml  #file where task has been written already
+  - include_tasks: install_package_playbook.yaml  #file where task has been written already but print include file in terminal
+       
+#difference between include and import task
+tasks:
+  - import_tasks: install_package_{{ansible_os_family}}.yaml  #file where task has been written already #static import can't use var from fact and inventory.
+  - include_tasks: install_package_{{ansible_os_family}}.yaml #file where task has been written already #dynamic
+ 
+#if else 
+{% condition %}
+action
+{% else %}
+action
+{% endif %}
+
+#for loop 
+{% for each in z %}
+this is {{each}}
+this is without variable
+{% endif %}
+
+#encrypt playbook with password by ansible-vault
+ansible-vault encrypt playbook.yaml
+
+#run encrpyted playbook
+ansible-playbook playbook.yml --ask-vault-pass
+
+#encrypt playbook with password by ansible-vault
+ansible-vault decrypt playbook.yaml
+
+
+
+
+ 
+
+
+
+
+
